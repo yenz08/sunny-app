@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icon.png">
 <title>Sunny — Calorie Tracker</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&family=Pacifico&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+<script src="https://unpkg.com/@zxing/library@latest/umd/index.min.js"></script>
 <style>
   :root {
     --bg: #fdf8f4;
@@ -848,7 +848,8 @@
     <div class="sheet-handle"></div>
     <div class="sheet-title">Scan a barcode</div>
     <div class="sheet-sub">Point your camera at the product</div>
-    <div id="scanner-container">
+    <div id="scanner-container" style="position:relative;">
+      <video id="scanner-video" style="width:100%;border-radius:18px;display:block;" autoplay muted playsinline></video>
       <div class="scan-frame-wrap">
         <div class="scan-frame"><div class="scan-line"></div></div>
       </div>
@@ -1380,7 +1381,8 @@ function submitFood() {
   toast(`🌸 ${name} added!`);
 }
 
-// ─── SCANNER ─────────────────────────────────────────────
+// ─── SCANNER (ZXing) ─────────────────────────────────────
+let codeReader = null;
 let scanning = false;
 
 function openScanner() {
@@ -1394,38 +1396,46 @@ function closeScanner() {
   stopScan();
 }
 
-function startScan() {
+async function startScan() {
   if (scanning) return;
   scanning = true;
-  Quagga.init({
-    inputStream: {
-      name: 'Live', type: 'LiveStream',
-      target: document.getElementById('scanner-container'),
-      constraints: { facingMode: 'environment', width: 360, height: 200 }
-    },
-    decoder: { readers: ['ean_reader','ean_8_reader','upc_reader','upc_e_reader','code_128_reader'] },
-    locate: true,
-  }, err => {
-    if (err) {
-      document.getElementById('scan-result').innerHTML =
-        `<div style="padding:11px;background:#fef0f0;border:1.5px solid #f5ccc8;border-radius:13px;font-size:13px;color:#c0605a;margin-bottom:10px;">Camera unavailable — please add food manually.</div>`;
-      return;
-    }
-    Quagga.start();
-  });
-  Quagga.onDetected(onBarcode);
+
+  try {
+    codeReader = new ZXing.BrowserMultiFormatReader();
+    const devices = await ZXing.BrowserMultiFormatReader.listVideoInputDevices();
+    // prefer back camera
+    const device = devices.find(d => /back|rear|environment/i.test(d.label)) || devices[devices.length - 1];
+    const deviceId = device ? device.deviceId : undefined;
+
+    await codeReader.decodeFromVideoDevice(deviceId, 'scanner-video', async (result, err) => {
+      if (result) {
+        const code = result.getText();
+        stopScan();
+        await lookupBarcode(code);
+      }
+    });
+  } catch(e) {
+    scanning = false;
+    document.getElementById('scan-result').innerHTML =
+      `<div style="padding:11px;background:#fef0f0;border:1.5px solid #f5ccc8;border-radius:13px;font-size:13px;color:#c0605a;margin-bottom:10px;">Camera unavailable — please allow camera access or add food manually.</div>`;
+  }
 }
 
 function stopScan() {
-  if (!scanning) return;
-  Quagga.offDetected(onBarcode);
-  try { Quagga.stop(); } catch(e) {}
+  if (codeReader) {
+    try { codeReader.reset(); } catch(e) {}
+    codeReader = null;
+  }
   scanning = false;
+  // stop video stream
+  const video = document.getElementById('scanner-video');
+  if (video && video.srcObject) {
+    video.srcObject.getTracks().forEach(t => t.stop());
+    video.srcObject = null;
+  }
 }
 
-async function onBarcode(result) {
-  const code = result.codeResult.code;
-  stopScan();
+async function lookupBarcode(code) {
   document.getElementById('scan-result').innerHTML =
     `<div style="text-align:center;padding:14px;color:var(--muted);font-size:13px;">🔍 Looking up <strong>${code}</strong>…</div>`;
   try {
