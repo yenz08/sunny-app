@@ -1,4 +1,4 @@
-const CACHE = 'sunny-v1';
+const CACHE = 'sunny-v2';
 const ASSETS = ['/', '/index.html'];
 
 self.addEventListener('install', e => {
