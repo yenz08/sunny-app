@@ -784,13 +784,35 @@
   <div class="sheet">
     <div class="sheet-handle"></div>
     <div class="sheet-title">Search food</div>
-    <div class="sheet-sub">Search millions of products</div>
-    <div style="display:flex;gap:8px;margin-bottom:14px;">
-      <input class="field-input" id="food-search-input" type="text" placeholder="e.g. Greek yogurt, banana…" style="flex:1;"
-        onkeydown="if(event.key==='Enter') searchFood()"/>
-      <button onclick="searchFood()" style="background:var(--text);color:var(--bg);border:none;border-radius:13px;padding:12px 16px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer;flex-shrink:0;">Go</button>
+
+    <!-- Tabs -->
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+      <button id="tab-search" onclick="switchSearchTab('search')" style="flex:1;padding:9px;border-radius:13px;border:1.5px solid var(--text);background:var(--text);color:var(--bg);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;">🔍 Search</button>
+      <button id="tab-barcode" onclick="switchSearchTab('barcode')" style="flex:1;padding:9px;border-radius:13px;border:1.5px solid var(--border);background:var(--surface);color:var(--muted);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;">🔢 Barcode</button>
     </div>
-    <div id="food-search-results"></div>
+
+    <!-- Search tab -->
+    <div id="search-tab-content">
+      <div class="sheet-sub" style="margin-top:-8px;">Search millions of products by name</div>
+      <div style="display:flex;gap:8px;margin-bottom:14px;">
+        <input class="field-input" id="food-search-input" type="text" placeholder="e.g. Greek yogurt, banana…" style="flex:1;"
+          onkeydown="if(event.key==='Enter') searchFood()"/>
+        <button onclick="searchFood()" style="background:var(--text);color:var(--bg);border:none;border-radius:13px;padding:12px 16px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer;flex-shrink:0;">Go</button>
+      </div>
+      <div id="food-search-results"></div>
+    </div>
+
+    <!-- Barcode tab -->
+    <div id="barcode-tab-content" style="display:none;">
+      <div class="sheet-sub" style="margin-top:-8px;">Enter the barcode number from the product</div>
+      <div style="display:flex;gap:8px;margin-bottom:14px;">
+        <input class="field-input" id="barcode-input" type="number" placeholder="e.g. 5000112637922" style="flex:1;"
+          onkeydown="if(event.key==='Enter') lookupBarcode()"/>
+        <button onclick="lookupBarcode()" style="background:var(--text);color:var(--bg);border:none;border-radius:13px;padding:12px 16px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer;flex-shrink:0;">Go</button>
+      </div>
+      <div id="barcode-results"></div>
+    </div>
+
     <button class="btn-cancel" onclick="closeFoodSearch()">Cancel</button>
   </div>
 </div>
@@ -1318,9 +1340,68 @@ function submitFood() {
 }
 
 // ─── FOOD SEARCH ─────────────────────────────────────────
+function switchSearchTab(tab) {
+  const isSearch = tab === 'search';
+  document.getElementById('search-tab-content').style.display  = isSearch ? 'block' : 'none';
+  document.getElementById('barcode-tab-content').style.display = isSearch ? 'none'  : 'block';
+  document.getElementById('tab-search').style.background  = isSearch ? 'var(--text)'    : 'var(--surface)';
+  document.getElementById('tab-search').style.color       = isSearch ? 'var(--bg)'      : 'var(--muted)';
+  document.getElementById('tab-search').style.borderColor = isSearch ? 'var(--text)'    : 'var(--border)';
+  document.getElementById('tab-barcode').style.background  = isSearch ? 'var(--surface)' : 'var(--text)';
+  document.getElementById('tab-barcode').style.color       = isSearch ? 'var(--muted)'   : 'var(--bg)';
+  document.getElementById('tab-barcode').style.borderColor = isSearch ? 'var(--border)'  : 'var(--text)';
+}
+
+async function lookupBarcode() {
+  const code = document.getElementById('barcode-input').value.trim();
+  if (!code) return;
+  const el = document.getElementById('barcode-results');
+  el.innerHTML = `<div style="text-align:center;padding:20px;color:var(--muted);font-size:13px;">🔍 Looking up barcode…</div>`;
+  try {
+    const res  = await fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`);
+    const data = await res.json();
+    if (data.status === 1) {
+      const p = data.product, n = p.nutriments || {};
+      const prod = {
+        name:     p.product_name || 'Unknown Product',
+        brand:    p.brands || '',
+        calories: Math.round(n['energy-kcal_100g'] || n['energy-kcal'] || 0),
+        protein:  Math.round(n.proteins_100g || 0),
+        carbs:    Math.round(n.carbohydrates_100g || 0),
+        fat:      Math.round(n.fat_100g || 0),
+        serving:  p.serving_quantity || 100,
+      };
+      el.innerHTML = `
+        <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:16px;padding:13px 14px;margin-bottom:9px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+            <div>
+              <div style="font-size:13px;font-weight:600;">${prod.name}</div>
+              ${prod.brand ? `<div style="font-size:11px;color:var(--muted);">${prod.brand}</div>` : ''}
+            </div>
+            <div style="font-family:'DM Serif Display',serif;font-size:17px;flex-shrink:0;margin-left:8px;">${prod.calories} <span style="font-size:10px;font-family:'DM Sans',sans-serif;color:var(--muted);">kcal</span></div>
+          </div>
+          <div style="display:flex;gap:12px;margin-bottom:10px;">
+            <span style="font-size:11px;color:var(--muted);">P: <b>${prod.protein}g</b></span>
+            <span style="font-size:11px;color:var(--muted);">C: <b>${prod.carbs}g</b></span>
+            <span style="font-size:11px;color:var(--muted);">F: <b>${prod.fat}g</b></span>
+            <span style="font-size:11px;color:var(--muted);">per 100g</span>
+          </div>
+          <button onclick='addSearchResult(${JSON.stringify(prod).replace(/'/g, "&#39;")})' style="width:100%;background:var(--sage);color:var(--text);border:none;border-radius:12px;padding:9px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;">+ Add to log</button>
+        </div>`;
+    } else {
+      el.innerHTML = `<div style="text-align:center;padding:20px;color:var(--muted);font-size:13px;">Product not found — try searching by name instead.</div>`;
+    }
+  } catch(e) {
+    el.innerHTML = `<div style="text-align:center;padding:20px;color:var(--muted);font-size:13px;">Connection error — check your internet and try again.</div>`;
+  }
+}
+
 function openFoodSearch() {
   document.getElementById('food-search-input').value = '';
   document.getElementById('food-search-results').innerHTML = '';
+  document.getElementById('barcode-input').value = '';
+  document.getElementById('barcode-results').innerHTML = '';
+  switchSearchTab('search');
   openOverlay('food-search-overlay');
   setTimeout(() => document.getElementById('food-search-input').focus(), 350);
 }
